@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32-S3 Fire Detection Dashboard</title>
+    <script src="https://unpkg.com/mqtt@2.18.8/dist/mqtt.min.js"></script>
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #1a202c;
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #1a202c;
+      }
+
+      .status {
+        text-align: center;
+        margin-bottom: 20px;
+        padding: 10px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 600;
+      }
+
+      .connected {
+        background: linear-gradient(135deg, #10b981, #059669);
+      }
+
+      .disconnected {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+      }
+
+      .card {
+        border: 1px solid #e2e8f0;
+        border-radius: 15px;
+        padding: 20px;
+        margin-top: 15px;
+        background: #f8fafc;
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        margin: 10px 0;
+        font-size: 1.1em;
+      }
+
+      .metric span.value {
+        font-weight: 700;
+      }
+
+      .level {
+        text-align: center;
+        font-weight: 800;
+        margin-top: 20px;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 1.2em;
+      }
+
+      .level-safe {
+        background: #10b981;
+        color: white;
+      }
+
+      .level-warning {
+        background: #f59e0b;
+        color: white;
+      }
+
+      .level-danger {
+        background: #ef4444;
+        color: white;
+        animation: blink 0.6s infinite;
+      }
+
+      @keyframes blink {
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .timestamp {
+        text-align: center;
+        color: #6b7280;
+        font-size: 0.9em;
+        margin-top: 15px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h1>🔥 ESP32-S3 Fire Detection</h1>
+      <div id="mqttStatus" class="status disconnected">
+        🔌 MQTT: Disconnected
+      </div>
+
+      <div class="card">
+        <div class="metric">
+          <span>🌡️ Temperature</span>
+          <span id="temp" class="value">-- °C</span>
+        </div>
+        <div class="metric">
+          <span>💧 Humidity</span>
+          <span id="humi" class="value">-- %</span>
+        </div>
+        <div class="metric">
+          <span>🔥 Smoke</span>
+          <span id="smoke" class="value">--</span>
+        </div>
+        <div class="metric">
+          <span>🧮 Risk Score</span>
+          <span id="risk" class="value">--</span>
+        </div>
+        <div id="level" class="level level-safe">SAFE</div>
+      </div>
+
+      <div class="timestamp">
+        <span id="lastUpdate">Last update: --</span>
+      </div>
+    </div>
+
+    <script>
+      const CONFIG = {
+        MQTT_HOST: "ws://192.168.1.9:8083", // EMQX/Mosquitto WebSocket port
+        TOPIC: "esp32s3/data",
+        RECONNECT_MS: 5000,
+      };
+
+      let client = null;
+      let reconnectTimer = null;
+
+      function log(msg) {
+        console.log(`[LOG] ${msg}`);
+      }
+
+      function updateStatus(connected) {
+        const el = document.getElementById("mqttStatus");
+        el.textContent = connected
+          ? "🔌 MQTT: Connected"
+          : "🔌 MQTT: Disconnected";
+        el.className = "status " + (connected ? "connected" : "disconnected");
+      }
+
+      function updateData(data) {
+        document.getElementById("temp").textContent = `${data.temp.toFixed(
+          1
+        )} °C`;
+        document.getElementById("humi").textContent = `${data.humi.toFixed(
+          1
+        )} %`;
+        document.getElementById("smoke").textContent = data.smoke;
+        document.getElementById("risk").textContent = data.risk;
+
+        const levelDiv = document.getElementById("level");
+        levelDiv.textContent = data.level.toUpperCase();
+        levelDiv.className = "level level-" + data.level;
+
+        const now = new Date();
+        document.getElementById(
+          "lastUpdate"
+        ).textContent = `Last update: ${now.toLocaleTimeString()}`;
+      }
+
+      function connectMQTT() {
+        log("Connecting to MQTT broker...");
+        updateStatus(false);
+
+        const clientId = "web_fire_" + Math.random().toString(16).substr(2, 6);
+        client = mqtt.connect(CONFIG.MQTT_HOST, {
+          clientId,
+          keepalive: 30,
+          reconnectPeriod: 0,
+        });
+
+        client.on("connect", () => {
+          log("Connected to MQTT!");
+          updateStatus(true);
+          client.subscribe(CONFIG.TOPIC);
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+        });
+
+        client.on("message", (topic, message) => {
+          if (topic === CONFIG.TOPIC) {
+            try {
+              const data = JSON.parse(message.toString());
+              updateData(data);
+            } catch (e) {
+              console.error("Invalid JSON:", e);
+            }
+          }
+        });
+
+        client.on("error", (err) => {
+          console.error("MQTT Error:", err);
+          updateStatus(false);
+          scheduleReconnect();
+        });
+
+        client.on("close", () => {
+          log("MQTT connection closed");
+          updateStatus(false);
+          scheduleReconnect();
+        });
+      }
+
+      function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connectMQTT();
+        }, CONFIG.RECONNECT_MS);
+      }
+
+      window.addEventListener("load", connectMQTT);
+    </script>
+  </body>
+</html>
