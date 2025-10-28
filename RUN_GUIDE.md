@@ -149,7 +149,7 @@ python -m http.server 3000
 ```
 Sau đó truy cập trình duyệt tại:
 ```bash
-http://localhost:3000/web_dashboard.html
+http://localhost:3000/index.html
 ```
 ---
 
