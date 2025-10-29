@@ -1,235 +1,289 @@
 <!DOCTYPE html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP32-S3 Fire Detection Dashboard</title>
-    <script src="https://unpkg.com/mqtt@2.18.8/dist/mqtt.min.js"></script>
-    <style>
-      body {
-        font-family: "Inter", sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: #1a202c;
-        min-height: 100vh;
-        padding: 20px;
-      }
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔥 ESP32-S3 Fire Detection Dashboard</title>
+  <script src="https://unpkg.com/mqtt@2.18.8/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
 
-      .container {
-        max-width: 600px;
-        margin: 0 auto;
-        background: white;
-        border-radius: 20px;
-        padding: 30px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-      }
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      display: flex;
+      height: 100vh;
+    }
 
-      h1 {
-        text-align: center;
-        margin-bottom: 20px;
-        color: #1a202c;
-      }
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      background: #1e3a8a;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      padding: 25px 15px;
+    }
+    .sidebar h2 {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .menu a {
+      display: block;
+      padding: 12px 15px;
+      color: #e2e8f0;
+      text-decoration: none;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      transition: 0.2s;
+    }
+    .menu a:hover, .menu a.active {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+    }
 
-      .status {
-        text-align: center;
-        margin-bottom: 20px;
-        padding: 10px;
-        border-radius: 10px;
-        color: white;
-        font-weight: 600;
-      }
+    /* Main */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
 
-      .connected {
-        background: linear-gradient(135deg, #10b981, #059669);
-      }
+    /* Topbar */
+    .topbar {
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .topbar h1 { font-size: 1.4rem; color: #1e3a8a; }
 
-      .disconnected {
-        background: linear-gradient(135deg, #ef4444, #dc2626);
-      }
+    /* Cards */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin: 25px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      text-align: center;
+      transition: 0.3s;
+    }
+    .card:hover { transform: translateY(-4px); }
+    .card h3 { margin-bottom: 8px; color: #475569; font-weight: 600; }
+    .value { font-size: 1.8rem; font-weight: 700; }
+    .connected { color: #10b981; }
+    .disconnected { color: #ef4444; }
 
-      .card {
-        border: 1px solid #e2e8f0;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 15px;
-        background: #f8fafc;
-      }
+    /* Charts */
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 25px;
+      padding: 0 25px 40px 25px;
+    }
+    .chart-box {
+      background: white;
+      border-radius: 18px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      padding: 25px;
+      text-align: center;
+      transition: 0.3s ease;
+    }
+    .chart-box:hover { transform: scale(1.02); }
+    canvas { width: 100%; height: 320px !important; }
 
-      .metric {
-        display: flex;
-        justify-content: space-between;
-        margin: 10px 0;
-        font-size: 1.1em;
-      }
+    .level {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 8px 20px;
+      border-radius: 10px;
+      color: white;
+      font-weight: 700;
+    }
+    .level-safe { background: #10b981; }
+    .level-warning { background: #f59e0b; }
+    .level-danger { background: #ef4444; animation: blink 0.6s infinite; }
+    @keyframes blink { 50% { opacity: 0.6; } }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
 
-      .metric span.value {
-        font-weight: 700;
-      }
 
-      .level {
-        text-align: center;
-        font-weight: 800;
-        margin-top: 20px;
-        padding: 10px;
-        border-radius: 8px;
-        font-size: 1.2em;
-      }
-
-      .level-safe {
-        background: #10b981;
-        color: white;
-      }
-
-      .level-warning {
-        background: #f59e0b;
-        color: white;
-      }
-
-      .level-danger {
-        background: #ef4444;
-        color: white;
-        animation: blink 0.6s infinite;
-      }
-
-      @keyframes blink {
-        50% {
-          opacity: 0.5;
-        }
-      }
-
-      .timestamp {
-        text-align: center;
-        color: #6b7280;
-        font-size: 0.9em;
-        margin-top: 15px;
-      }
-    </style>
-  </head>
-
-  <body>
-    <div class="container">
-      <h1>🔥 ESP32-S3 Fire Detection</h1>
-      <div id="mqttStatus" class="status disconnected">
-        🔌 MQTT: Disconnected
-      </div>
-
-      <div class="card">
-        <div class="metric">
-          <span>🌡️ Temperature</span>
-          <span id="temp" class="value">-- °C</span>
-        </div>
-        <div class="metric">
-          <span>💧 Humidity</span>
-          <span id="humi" class="value">-- %</span>
-        </div>
-        <div class="metric">
-          <span>🔥 Smoke</span>
-          <span id="smoke" class="value">--</span>
-        </div>
-        <div class="metric">
-          <span>🧮 Risk Score</span>
-          <span id="risk" class="value">--</span>
-        </div>
-        <div id="level" class="level level-safe">SAFE</div>
-      </div>
-
-      <div class="timestamp">
-        <span id="lastUpdate">Last update: --</span>
-      </div>
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <h1>🔥 ESP32-S3 Fire Detection System</h1>
+      <div>👤 Admin</div>
     </div>
 
-    <script>
-      const CONFIG = {
-        MQTT_HOST: "ws://192.168.1.9:8083", // EMQX/Mosquitto WebSocket port
-        TOPIC: "esp32s3/data",
-        RECONNECT_MS: 5000,
-      };
+    <!-- Cards -->
+    <div class="cards">
+      <div class="card"><h3>🌡️ Temperature</h3><div id="tempVal" class="value">-- °C</div></div>
+      <div class="card"><h3>💧 Humidity</h3><div id="humiVal" class="value">-- %</div></div>
+      <div class="card"><h3>🔥 Smoke</h3><div id="smokeVal" class="value">--</div></div>
+      <div class="card"><h3>⚙️ MQTT Status</h3><div id="mqttStatus" class="value disconnected">Disconnected</div></div>
+      <div class="card"><h3>🧮 Risk Level</h3><div id="level" class="value level level-safe">SAFE</div></div>
+    </div>
 
-      let client = null;
-      let reconnectTimer = null;
+    <!-- Charts -->
+    <div class="charts">
+      <div class="chart-box">
+        <h3 style="color:#ef4444;">🌡️ Temperature</h3>
+        <canvas id="tempChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3 style="color:#3b82f6;">💧 Humidity</h3>
+        <canvas id="humiChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3 style="color:#f59e0b;">🔥 Smoke</h3>
+        <canvas id="smokeChart"></canvas>
+      </div>
+    </div>
+  </div>
 
-      function log(msg) {
-        console.log(`[LOG] ${msg}`);
-      }
+  <script>
+    const CONFIG = {
+      MQTT_HOST: "ws://172.20.10.3:8083",
+      TOPIC: "esp32s3/data",
+      MAX_POINTS: 20,
+      TEMP_LIMITS: { safe: 0, warn: 35, danger: 40 },
+      HUMI_LIMITS: { safe: 30, warn: 70, danger: 85 },
+      SMOKE_LIMITS: { safe: 1000, warn: 2000, danger: 2500 }
+    };
 
-      function updateStatus(connected) {
-        const el = document.getElementById("mqttStatus");
-        el.textContent = connected
-          ? "🔌 MQTT: Connected"
-          : "🔌 MQTT: Disconnected";
-        el.className = "status " + (connected ? "connected" : "disconnected");
-      }
+    function createChart(ctx, color, limits) {
+      const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+      gradient.addColorStop(0, color + "33");
+      gradient.addColorStop(1, color + "00");
 
-      function updateData(data) {
-        document.getElementById("temp").textContent = `${data.temp.toFixed(
-          1
-        )} °C`;
-        document.getElementById("humi").textContent = `${data.humi.toFixed(
-          1
-        )} %`;
-        document.getElementById("smoke").textContent = data.smoke;
-        document.getElementById("risk").textContent = data.risk;
-
-        const levelDiv = document.getElementById("level");
-        levelDiv.textContent = data.level.toUpperCase();
-        levelDiv.className = "level level-" + data.level;
-
-        const now = new Date();
-        document.getElementById(
-          "lastUpdate"
-        ).textContent = `Last update: ${now.toLocaleTimeString()}`;
-      }
-
-      function connectMQTT() {
-        log("Connecting to MQTT broker...");
-        updateStatus(false);
-
-        const clientId = "web_fire_" + Math.random().toString(16).substr(2, 6);
-        client = mqtt.connect(CONFIG.MQTT_HOST, {
-          clientId,
-          keepalive: 30,
-          reconnectPeriod: 0,
-        });
-
-        client.on("connect", () => {
-          log("Connected to MQTT!");
-          updateStatus(true);
-          client.subscribe(CONFIG.TOPIC);
-          if (reconnectTimer) clearTimeout(reconnectTimer);
-        });
-
-        client.on("message", (topic, message) => {
-          if (topic === CONFIG.TOPIC) {
-            try {
-              const data = JSON.parse(message.toString());
-              updateData(data);
-            } catch (e) {
-              console.error("Invalid JSON:", e);
+      return new Chart(ctx, {
+        type: "line",
+        data: { labels: [], datasets: [{
+          borderColor: color,
+          backgroundColor: gradient,
+          data: [],
+          fill: true,
+          tension: 0.4,
+          borderWidth: 3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointHoverBorderWidth: 3,
+          pointHoverBackgroundColor: color,
+          pointHoverBorderColor: "#fff",
+        }]},
+        options: {
+          responsive: true,
+          animation: { duration: 700, easing: "easeOutQuart" },
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: true,
+              backgroundColor: "#1e3a8a",
+              titleFont: { size: 13, weight: "bold" },
+              bodyFont: { size: 12 },
+              padding: 10,
+              cornerRadius: 8,
+              displayColors: false,
+              callbacks: {
+                label: (context) => `Giá trị: ${context.formattedValue}`,
+                title: (context) => `🕒 ${context[0].label}`,
+              },
+            },
+            annotation: {
+              annotations: {
+                safe: { type: "line", yMin: limits.safe, yMax: limits.safe, borderColor: "#10b981", borderWidth: 2, borderDash: [5,5] },
+                warn: { type: "line", yMin: limits.warn, yMax: limits.warn, borderColor: "#f59e0b", borderWidth: 2, borderDash: [5,5] },
+                danger: { type: "line", yMin: limits.danger, yMax: limits.danger, borderColor: "#ef4444", borderWidth: 2, borderDash: [5,5] }
+              }
             }
-          }
-        });
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: "#64748b",
+                autoSkip: true,
+                maxTicksLimit: 6,
+                maxRotation: 0,
+                minRotation: 0,
+                font: { size: 11 },
+              },
+              grid: { color: "#f1f5f9" },
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: "#e2e8f0" },
+              ticks: { color: "#475569" },
+            },
+          },
+        },
+        plugins: [Chart.registry.getPlugin("annotation")]
+      });
+    }
 
-        client.on("error", (err) => {
-          console.error("MQTT Error:", err);
-          updateStatus(false);
-          scheduleReconnect();
-        });
+    const tempChart = createChart(document.getElementById("tempChart").getContext("2d"), "#ef4444", CONFIG.TEMP_LIMITS);
+    const humiChart = createChart(document.getElementById("humiChart").getContext("2d"), "#3b82f6", CONFIG.HUMI_LIMITS);
+    const smokeChart = createChart(document.getElementById("smokeChart").getContext("2d"), "#f59e0b", CONFIG.SMOKE_LIMITS);
 
-        client.on("close", () => {
-          log("MQTT connection closed");
-          updateStatus(false);
-          scheduleReconnect();
-        });
+    function pushToChart(chart, value) {
+      const now = new Date();
+      const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      chart.data.labels.push(timeLabel);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > CONFIG.MAX_POINTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
       }
+      chart.update();
+    }
 
-      function scheduleReconnect() {
-        if (reconnectTimer) return;
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          connectMQTT();
-        }, CONFIG.RECONNECT_MS);
-      }
+    function updateUI(data) {
+      document.getElementById("tempVal").textContent = `${data.temp.toFixed(1)} °C`;
+      document.getElementById("humiVal").textContent = `${data.humi.toFixed(1)} %`;
+      document.getElementById("smokeVal").textContent = data.smoke;
 
-      window.addEventListener("load", connectMQTT);
-    </script>
-  </body>
+      const levelDiv = document.getElementById("level");
+      levelDiv.textContent = data.level.toUpperCase();
+      levelDiv.className = `value level level-${data.level}`;
+
+      pushToChart(tempChart, data.temp);
+      pushToChart(humiChart, data.humi);
+      pushToChart(smokeChart, data.smoke);
+    }
+
+    function connectMQTT() {
+      const statusEl = document.getElementById("mqttStatus");
+      const client = mqtt.connect(CONFIG.MQTT_HOST, { clientId: "web_fire_" + Math.random().toString(16).substr(2,6) });
+      statusEl.textContent = "Connecting..."; statusEl.className = "value disconnected";
+
+      client.on("connect", () => {
+        statusEl.textContent = "Connected";
+        statusEl.className = "value connected";
+        client.subscribe(CONFIG.TOPIC);
+      });
+      client.on("message", (topic, message) => {
+        if (topic === CONFIG.TOPIC) {
+          try { updateUI(JSON.parse(message.toString())); } catch {}
+        }
+      });
+      client.on("close", () => { statusEl.textContent = "Disconnected"; statusEl.className = "value disconnected"; });
+    }
+
+    window.addEventListener("load", connectMQTT);
+  </script>
+</body>
 </html>
