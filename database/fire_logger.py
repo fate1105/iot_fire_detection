@@ -8,25 +8,26 @@ import json
 import time
 from datetime import datetime, timezone, timedelta
 import paho.mqtt.client as mqtt
-import requests  # dùng để gửi tin nhắn Telegram
+import requests 
 
-# ============================== CONFIG ==============================
-
-# ⚙️ MQTT cấu hình
-MQTT_BROKER = "192.168.1.9"  # 🛠️ Sửa IP máy chủ tại đây
+# MQTT cấu hình
+MQTT_BROKER = "172.20.10.6"  # 🛠️ Sửa IP máy chủ tại đây
 MQTT_PORT = 1883
 TOPIC_FIRE = "esp32s3/data"  # topic ESP32 gửi dữ liệu báo cháy
 
-# 💾 Database
+# Database
 DB_FILE = "fire_data.db"
 VN_TZ = timezone(timedelta(hours=7))  # Asia/Ho_Chi_Minh (UTC+7)
 
-# 💬 Telegram Alert
-TELEGRAM_TOKEN = "8159024125:AAH7B472lHdLWi1UfDoYYvoW6Ug-ZrhBDwM"  # 🟡 thay token bot thật của bạn
-CHAT_ID = "5548903675"                    # 🟡 thay chat ID của bạn
+# Telegram Alert
+TELEGRAM_TOKEN = "TOKEN_HERE"  # 🛠️ Thay bằng token bot của bạn
+CHAT_ID = "ID_HERE"          # 🛠️ Thay bằng chat ID của bạn
+last_alert_level = "safe"
+last_alert_time = 0
+ALERT_COOLDOWN = 60  
 
 
-# =========================== DATABASE INIT ===========================
+# DATABASE INIT
 
 def init_database():
     conn = sqlite3.connect(DB_FILE)
@@ -47,8 +48,6 @@ def init_database():
     conn.close()
     print(f"[DB] Ready ({DB_FILE})")
 
-
-# ============================ TELEGRAM ALERT ============================
 
 def send_telegram_alert(message: str):
     """Gửi cảnh báo qua Telegram"""
@@ -75,37 +74,40 @@ def on_connect(client, userdata, flags, rc):
 
 
 def on_message(client, userdata, msg):
+    global last_alert_level, last_alert_time
     payload = msg.payload.decode()
+
     try:
         data = json.loads(payload)
         save_fire_data(data)
 
-        # 🔔 Nếu mức cảnh báo không an toàn → gửi tin nhắn Telegram
         level = data.get("level", "safe")
-        if level == "danger":
-            send_telegram_alert(
-                f"🚨 CẢNH BÁO CHÁY! 🔥\n"
-                f"Nhiệt độ: {data.get('temp')}°C\n"
-                f"Độ ẩm: {data.get('humi')}%\n"
-                f"Khói: {data.get('smoke')}\n"
-                f"Thời gian: {now_vn()}"
-            )
-        elif level == "warning":
-            send_telegram_alert(
-                f"⚠️ Cảnh báo sớm!\n"
-                f"Nhiệt độ: {data.get('temp')}°C\n"
-                f"Độ ẩm: {data.get('humi')}%\n"
-                f"Khói: {data.get('smoke')}\n"
-                f"Thời gian: {now_vn()}"
-            )
+        now_s = time.time()
 
-    except json.JSONDecodeError:
-        print(f"[WARN] Invalid JSON: {payload}")
+        # 🔥 Nếu vừa chuyển từ safe → danger hoặc warning
+        if level in ["warning", "danger"]:
+            if (
+                level != last_alert_level or
+                (now_s - last_alert_time > ALERT_COOLDOWN)
+            ):
+                msg_text = (
+                    f"🚨 {('CẢNH BÁO CHÁY' if level == 'danger' else 'CẢNH BÁO SỚM')}!\n"
+                    f"🌡️ Nhiệt độ: {data.get('temp')}°C\n"
+                    f"💧 Độ ẩm: {data.get('humi')}%\n"
+                    f"🔥 Khói: {data.get('smoke')}\n"
+                    f"⏰ Thời gian: {now_vn()}"
+                )
+                send_telegram_alert(msg_text)
+                last_alert_time = now_s
+                last_alert_level = level
+
+        elif level == "safe" and last_alert_level != "safe":
+            send_telegram_alert(f"✅ Hệ thống đã trở lại an toàn lúc {now_vn()}.")
+            last_alert_level = "safe"
+
     except Exception as e:
         print(f"[ERR] {e}")
 
-
-# ============================ SAVE FUNCTIONS ============================
 
 def now_vn():
     """Thời gian hiện tại theo múi giờ Việt Nam."""
@@ -136,7 +138,7 @@ def save_fire_data(data):
           f"T={data.get('temp')}°C H={data.get('humi')}% S={data.get('smoke')} Risk={data.get('risk')}")
 
 
-# ============================== MAIN LOOP ==============================
+# MAIN LOOP 
 
 def main():
     print("=== MQTT → SQLite Fire Logger + Telegram Alert ===")

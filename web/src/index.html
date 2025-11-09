@@ -157,11 +157,11 @@
 
   <script>
     const CONFIG = {
-      MQTT_HOST: "ws://172.20.10.3:8083",
+      MQTT_HOST: "ws://172.20.10.6:8083",
       TOPIC: "esp32s3/data",
       MAX_POINTS: 20,
       TEMP_LIMITS: { safe: 0, warn: 35, danger: 40 },
-      HUMI_LIMITS: { safe: 30, warn: 70, danger: 85 },
+      HUMI_LIMITS: { danger: 35, warn: 55, safe: 100 },
       SMOKE_LIMITS: { safe: 1000, warn: 2000, danger: 2500 }
     };
 
@@ -251,19 +251,26 @@
       chart.update();
     }
 
-    function updateUI(data) {
-      document.getElementById("tempVal").textContent = `${data.temp.toFixed(1)} °C`;
-      document.getElementById("humiVal").textContent = `${data.humi.toFixed(1)} %`;
-      document.getElementById("smokeVal").textContent = data.smoke;
+   function updateUI(data) {
+  document.getElementById("tempVal").textContent = `${data.temp.toFixed(1)} °C`;
+  document.getElementById("humiVal").textContent = `${data.humi.toFixed(1)} %`;
+  document.getElementById("smokeVal").textContent = data.smoke;
 
-      const levelDiv = document.getElementById("level");
-      levelDiv.textContent = data.level.toUpperCase();
-      levelDiv.className = `value level level-${data.level}`;
+  // ===== Tính mức độ nguy hiểm theo ngưỡng mới =====
+  let level = "safe";
+  if (data.humi < CONFIG.HUMI_LIMITS.danger) level = "danger";
+  else if (data.humi < CONFIG.HUMI_LIMITS.warn) level = "warning";
 
-      pushToChart(tempChart, data.temp);
-      pushToChart(humiChart, data.humi);
-      pushToChart(smokeChart, data.smoke);
-    }
+  // Cập nhật UI
+  const levelDiv = document.getElementById("level");
+  levelDiv.textContent = level.toUpperCase();
+  levelDiv.className = `value level level-${level}`;
+
+  pushToChart(tempChart, data.temp);
+  pushToChart(humiChart, data.humi);
+  pushToChart(smokeChart, data.smoke);
+}
+
 
     function connectMQTT() {
       const statusEl = document.getElementById("mqttStatus");

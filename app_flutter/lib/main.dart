@@ -151,7 +151,7 @@ class MqttController extends ChangeNotifier {
   String lastUpdate = '--';
 
   // ⚙️ Cấu hình MQTT tĩnh
-  static const String mqttHost = '192.168.1.9'; // 🧩 Thay IP tại đây
+  static const String mqttHost = '172.20.10.6'; // 🧩 Thay IP tại đây
   static const int mqttPort = 1883;             // TCP port (ESP / Python)
   static const int mqttWsPort = 8083;           // WebSocket port (Flutter Web)
   static const String topic = 'esp32s3/data';
